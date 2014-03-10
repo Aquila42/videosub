@@ -1,2 +1,20 @@
-We are using the NLTK toolkit to create a English-Hindi translator.
-This is a similar Japanese-English translator: https://github.com/Aquila42/nltk
+
+#Import the Natural Language Toolkit
+import nltk
+
+#User enters the name of the file containing a sentence
+filename = raw_input('Enter a file name: ')
+f = open(filename, 'r')
+sentence = f.readline()
+print "Sentence: ",sentence
+
+#Tokenize the sentence to extract words and punctuation
+tokens = nltk.word_tokenize(sentence)
+print tokens
+
+#Tag the extracted tokens using a Part-of-Speech (POS) Tagger
+tagged = nltk.pos_tag(tokens)
+print tagged
+
+#Create a dictionary from the tagged words as Word:POS pairs
+dictionary = dict(tagged)
