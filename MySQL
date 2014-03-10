@@ -1,0 +1,15 @@
+CREATE DATABASE dict
+    CHARACTER SET utf8
+    COLLATE utf8_unicode_ci;
+
+USE dict;
+
+CREATE TABLE dictionary
+(
+English varchar(50),
+Hindi varchar(200) COLLATE utf8_unicode_ci NOT NULL,
+POS varchar(10),
+PRIMARY KEY (English)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+
+INSERT INTO dictionary(Hindi) VALUES ('कंप्यूटर');
