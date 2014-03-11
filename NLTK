@@ -1,20 +1,137 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 
 #Import the Natural Language Toolkit
 import nltk
+import MySQLdb
+import subprocess
 
-#User enters the name of the file containing a sentence
-filename = raw_input('Enter a file name: ')
-f = open(filename, 'r')
-sentence = f.readline()
-print "Sentence: ",sentence
+class DB:
+  conn = None
 
-#Tokenize the sentence to extract words and punctuation
-tokens = nltk.word_tokenize(sentence)
-print tokens
+  def connect(self):
+    self.conn = MySQLdb.connect('localhost', 'root', 'root', 'dict', charset="utf8")
 
-#Tag the extracted tokens using a Part-of-Speech (POS) Tagger
-tagged = nltk.pos_tag(tokens)
-print tagged
+  def query(self, sql):
+    try:
+      cursor = self.conn.cursor()
+      cursor.execute(sql)
+    except (AttributeError, MySQLdb.OperationalError):
+      self.connect()
+      cursor = self.conn.cursor()
+      cursor.execute(sql)
+    return cursor
 
-#Create a dictionary from the tagged words as Word:POS pairs
-dictionary = dict(tagged)
+def input():
+    #Video file and subtitles file names are global, to be used during input and output
+    global vidFile, subFile
+    
+    #User enters the name of the video file
+    vidFile = raw_input('Enter a file name: ') #Need to add GUI
+    #Open the video's .srt file (SRT file has the same name as the video)
+    x = vidFile.find('.')
+    subFile = vidFile[:x]+".srt"
+
+    #Play video with English subtitles as a preview
+    playVideo("Purisa")
+
+    f = open(subFile, 'r')
+    return f
+
+def playVideo(font):
+    global vidFile, subFile
+    sub = "--sub-file="+subFile
+    font = "--freetype-font="+font
+    p = subprocess.Popen(["/usr/bin/vlc",vidFile,sub,font])
+    p.wait()
+
+def proc():
+    #File pointer to subtitles file
+    f = input()
+
+    #Format of .srt file: Subtitle number \n Time Stamp \n Subtitle (string)
+    f.readline() #Skip Subtitle Number
+    f.readline() #Skip Time Stamp
+    sentence = f.readline() #Read English subtitle
+    f.close()
+    print "Sentence: ",sentence
+
+    #Tokenize the sentence to extract words and punctuation
+    tokens = nltk.word_tokenize(sentence)
+    print tokens
+
+    #Tag the extracted tokens using a Part-of-Speech (POS) Tagger
+    tagged = nltk.pos_tag(tokens)
+    print tagged
+    return tagged
+
+def translate():
+    #Tagged words returned as a list of tuples
+    tagged = proc()
+    
+    #The three flags denote the identification of the Subject, Verb and Object
+    flagS = 0 
+    flagV = 0
+    flagO = 0
+    
+    flagVBP = 0
+    
+    for word in tagged:
+    #Identification of Subject
+        
+        if flagS == 0:
+            if word[1] == "PRP":
+                subject = lookup(word[0],"PRP") + " " #rethink the DB I=main, I=mujhe?
+                flagS = 1
+                continue
+            else:
+                print "I haven't been trained to do that Subject yet! :("
+        if flagV == 0:
+            if word[1] == "VBP":
+                flagVBP = 1
+                wordVBP = word[0]
+                continue
+            if word[1] == "VBG":
+                verb = lookup(word[0],"VBG") + " "
+            if flagVBP == 1:
+                verb = verb + lookup(wordVBP,"VBP") + " "
+            flagV = 1
+            continue
+        if flagO == 0:
+            if word[1] == "NN":
+                obj = lookup(word[0],"NN") + " " #rethink the DB I=main, I=mujhe?
+                flagO = 1
+            else:
+                print "I haven't been trained to do that Object yet! :("
+        translatedSent = subject + obj + verb
+    return translatedSent
+
+def lookup(eng,pos):
+    db = DB()
+    sql = "SELECT * FROM dictionary where English='"+eng+"' and POS='"+pos+"'" #Error handling here!
+    cursor = db.query(sql)
+    row = cursor.fetchone()
+    return row[1]
+
+def translatedSub():
+    translated = translate()
+    global subFile
+    fTrans = open("temp.srt",'w')
+    fSub = open(subFile,'r')
+
+    for i in range(4):
+        sent = fSub.readline()
+        if i == 2: #postition of subtitle string
+            fTrans.write(translated.encode("UTF-8"))
+        else: #copy everything else verbatim
+            fTrans.write(sent)
+
+    #Make temp the SRT file for the video
+    origFile = "orig"+subFile
+    subprocess.call(["mv",subFile,origFile]) #make a copy of the English subtitle file
+    subprocess.call(["mv","temp.srt",subFile]) # Make the translated file the video's SRT    
+    print translated
+
+translatedSub()
+playVideo("Mangal")
+print ".srt successfully created!"
