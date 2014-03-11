@@ -1,0 +1,5 @@
+import subprocess
+import sys
+video = str(sys.argv[1]) # for commandline arguments
+print video
+subprocess.call(["avconv","-i",video,"anusha.mp3"])# to extract audio from video
