@@ -3,31 +3,42 @@
 
 #Import the Natural Language Toolkit
 import nltk
+#Library to connect to MySQL from Python
 import MySQLdb
+#Library to run command line arguments from Python
 import subprocess
+#Library for sys.exit()
+import sys
 
+#connect to the database
 class DB:
   conn = None
-
+  #self is the object of the class DB, used like "this" in Java
   def connect(self):
+    #Connect to the local server and MySQL database
     self.conn = MySQLdb.connect('localhost', 'root', 'root', 'dict', charset="utf8")
 
+  #Execute the "sql" query
   def query(self, sql):
     try:
+      #The cursor is used to execute the query
       cursor = self.conn.cursor()
       cursor.execute(sql)
+
+      #In case connection wasn't established, repeat the process
     except (AttributeError, MySQLdb.OperationalError):
       self.connect()
       cursor = self.conn.cursor()
       cursor.execute(sql)
     return cursor
 
-def input():
-    #Video file and subtitles file names are global, to be used during input and output
+def userInput():
+    #Video file and Subtitle file names are global, to be used during input and output
     global vidFile, subFile
     
     #User enters the name of the video file
     vidFile = raw_input('Enter a file name: ') #Need to add GUI
+    
     #Open the video's .srt file (SRT file has the same name as the video)
     x = vidFile.find('.')
     subFile = vidFile[:x]+".srt"
@@ -35,6 +46,7 @@ def input():
     #Play video with English subtitles as a preview
     playVideo("Purisa")
 
+    #Open the subtitle file so that one line can be translated at a time
     f = open(subFile, 'r')
     return f
 
@@ -45,92 +57,176 @@ def playVideo(font):
     p = subprocess.Popen(["/usr/bin/vlc",vidFile,sub,font])
     p.wait()
 
-def proc():
-    #File pointer to subtitles file
-    f = input()
 
-    #Format of .srt file: Subtitle number \n Time Stamp \n Subtitle (string)
-    f.readline() #Skip Subtitle Number
-    f.readline() #Skip Time Stamp
-    sentence = f.readline() #Read English subtitle
-    f.close()
-    print "Sentence: ",sentence
+'''
+def IDSubject(sentence):
+  subjectTrans = ""
+  for word in sentence:
+    if word == " ":
+      continue
+    hindi,count = lookup(word,-1) #rethink the DB I=main, I=mujhe?
+    subjectTrans = subjectTrans + " " + hindi
+  return subjectTrans,count
+'''
 
-    #Tokenize the sentence to extract words and punctuation
-    tokens = nltk.word_tokenize(sentence)
-    print tokens
-
-    #Tag the extracted tokens using a Part-of-Speech (POS) Tagger
-    tagged = nltk.pos_tag(tokens)
-    print tagged
-    return tagged
-
-def translate():
-    #Tagged words returned as a list of tuples
-    tagged = proc()
-    
-    #The three flags denote the identification of the Subject, Verb and Object
-    flagS = 0 
-    flagV = 0
-    flagO = 0
-    
-    flagVBP = 0
-    
-    for word in tagged:
-    #Identification of Subject
-        
-        if flagS == 0:
-            if word[1] == "PRP":
-                subject = lookup(word[0],"PRP") + " " #rethink the DB I=main, I=mujhe?
-                flagS = 1
-                continue
-            else:
-                print "I haven't been trained to do that Subject yet! :("
-        if flagV == 0:
-            if word[1] == "VBP":
-                flagVBP = 1
-                wordVBP = word[0]
-                continue
-            if word[1] == "VBG":
-                verb = lookup(word[0],"VBG") + " "
-            if flagVBP == 1:
-                verb = verb + lookup(wordVBP,"VBP") + " "
-            flagV = 1
-            continue
-        if flagO == 0:
-            if word[1] == "NN":
-                obj = lookup(word[0],"NN") + " " #rethink the DB I=main, I=mujhe?
-                flagO = 1
-            else:
-                print "I haven't been trained to do that Object yet! :("
-        translatedSent = subject + obj + verb
-    return translatedSent
-
-def lookup(eng,pos):
+def IDObject(word):
+  if word[1] == "NN":
+    obj = lookup(word[0],word[1]) + " "
+    flagO = 1
+  else:
+    print "I haven't been trained to do that Object yet! :("
+  
+def lookup(eng,count):
+    print "Entered lookup"
     db = DB()
-    sql = "SELECT * FROM dictionary where English='"+eng+"' and POS='"+pos+"'" #Error handling here!
+    if count == -1:
+      sql = "SELECT * FROM dictionary where English='"+eng+"'" #Error handling here!
+    else:
+      count = str(count)
+      sql = "SELECT * FROM dictionary where English='"+eng+"' and Count='"+count+"'"
     cursor = db.query(sql)
     row = cursor.fetchone()
-    return row[1]
+    if row == None:
+      count = "0"
+      sql = "SELECT * FROM dictionary where English='"+eng+"' and Count='"+count+"'"
+    print "row: ",row
+    return row[1],row[3]
+
+def translate(tagged,flagS,flagV,flagO):    
+
+    flagQ = 0
+    
+    subject = ""
+    obj = ""
+    verb = ""
+    translatedSent = ""
+    count = 0
+    index = 0
+    indexStart = -1
+    indexEnd = -1
+
+    #Identify subject
+    for word in tagged:
+      if "WP" in word:
+        flagQ = 1
+      if word[1][:2] == "VB":
+        if indexStart == -1:
+          indexStart = index
+        else:
+          indexEnd = index + 1
+      index = index + 1
+
+    if flagQ == 1:
+      o = tagged[:indexStart]
+      v = tagged[indexStart:indexEnd]
+      s = tagged[indexEnd:]
+    else:
+      s = tagged[:indexStart]
+      v = tagged[indexStart:indexEnd]
+      o = tagged[indexEnd:]
+    print "Subject: ",s
+    print "Verb: ",v
+    print "Object: ",o
+    
+    for word in s:
+      trans,count = lookup(word[0], -1)
+      subject = subject + trans + " "
+
+    temp = v
+    for word in v:
+      if "VBG" in word:
+        index = v.index(word)
+        temp[index], temp[index-1] = temp[index-1], temp[index]
+
+    v = temp
+    for word in v:
+      trans,count = lookup(word[0], count)
+      verb = verb + trans + " "
+
+    for word in o:
+      trans,count = lookup(word[0], -1)
+      obj = obj + trans + " " 
+
+    translatedSent = subject + obj + verb
+    return translatedSent.rstrip()
+
+def checkContraction(sentence,word,num):
+  flagContraction = sentence.find(word)
+  if flagContraction >= 0:
+    remove = word.find("'")
+    word = word[:remove] + word[remove+1:]
+    sentence = sentence[:flagContraction] + word + sentence[flagContraction+num:]
+  return sentence
 
 def translatedSub():
-    translated = translate()
-    global subFile
-    fTrans = open("temp.srt",'w')
-    fSub = open(subFile,'r')
+    fSub = userInput() #English subtitles file
+    fTrans = open("temp.srt",'w') #temporary subtitles file
+    sentence = "Start"
+    #The three flags denote the identification of the Subject, Verb and Object
+    i = 0
+    while sentence != "":
+        flagSound = 0
+        flagS = 0 
+        flagV = 0
+        flagO = 0
+        i = i + 1
+        sentence = fSub.readline() #Frame number
+        fTrans.write(sentence)
+        sentence = fSub.readline() #Time stamp 00:00:00 ---> etc
+        fTrans.write(sentence)
+        sentence = fSub.readline() #Read first line of subtitle
+        '''
+        copy = fSub.readline() #Read next line of subtitle file to check if it is an empty line or not
+        nextLine = copy #Actual next line (this won't be stripped)
+        while copy.strip() != "": # Strips copy of spaces, tabs, new line etc., returns only the character. An empty line has no characters i.e. ""
+            sentence = sentence + " " + nextLine
+            copy = fSub.readline() #"\n"
+            nextLine = copy #"\n"
+        '''
+        #WHY?
+        if sentence == "":
+            break
 
-    for i in range(4):
-        sent = fSub.readline()
-        if i == 2: #postition of subtitle string
+        #For music
+        if sentence[0] == "[":
+            flagSound = 1
+            length = len(sentence)-2
+            sentence = sentence[1:length]
+            flagV = 1
+            flagO = 1
+
+        #Look for contractions
+        sentence = checkContraction(sentence,"don't",5)
+        sentence = checkContraction(sentence,"isn't",5)
+        flagIts = sentence.find("it's")
+        if flagIts >= 0:
+          sentence = sentence[:flagIts] + "it is" + sentence[flagIts+4:]
+        sentence = sentence.lower()
+
+        #Tokenize the sentence to extract words and punctuation
+        tokens = nltk.word_tokenize(sentence)
+
+        #Tag the extracted tokens using a Part-of-Speech (POS) Tagger
+        tagged = nltk.pos_tag(tokens)
+
+        #This is where the translator kicks in
+        translated = translate(tagged,flagS,flagV,flagO)
+        print "Translated: ",translated
+        if flagSound == 1:
+            fTrans.write("["+translated.encode("UTF-8")+"]") #translated sentence
+        else:
             fTrans.write(translated.encode("UTF-8"))
-        else: #copy everything else verbatim
-            fTrans.write(sent)
-
+        fTrans.write("\n\n")
+        if i == 2:
+            break
+        
+    global subFile
+    
     #Make temp the SRT file for the video
     origFile = "orig"+subFile
     subprocess.call(["mv",subFile,origFile]) #make a copy of the English subtitle file
-    subprocess.call(["mv","temp.srt",subFile]) # Make the translated file the video's SRT    
-    print translated
+    subprocess.call(["mv","temp.srt",subFile]) # Make the translated file the video's SRT
+    
 
 translatedSub()
 playVideo("Mangal")
