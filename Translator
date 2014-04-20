@@ -79,7 +79,7 @@ def IDObject(word):
 def lookup(eng,count):
     print "Entered lookup"
     db = DB()
-    if count == -1:
+    if count == 0:
       sql = "SELECT * FROM dictionary where English='"+eng+"'" #Error handling here!
     else:
       count = str(count)
@@ -129,9 +129,10 @@ def translate(tagged,flagS,flagV,flagO):
     print "Object: ",o
     
     for word in s:
-      trans,count = lookup(word[0], -1)
+      trans,count = lookup(word[0], 0)
       subject = subject + trans + " "
 
+    print "Subject: ",subject
     temp = v
     for word in v:
       if "VBG" in word:
@@ -140,11 +141,14 @@ def translate(tagged,flagS,flagV,flagO):
 
     v = temp
     for word in v:
+      print word[0]
       trans,count = lookup(word[0], count)
       verb = verb + trans + " "
 
+    print "Verb: ",verb
+    
     for word in o:
-      trans,count = lookup(word[0], -1)
+      trans,count = lookup(word[0], 0)
       obj = obj + trans + " " 
 
     translatedSent = subject + obj + verb
@@ -169,21 +173,21 @@ def translatedSub():
         flagS = 0 
         flagV = 0
         flagO = 0
+        flagPunc = 0
         i = i + 1
         sentence = fSub.readline() #Frame number
         fTrans.write(sentence)
         sentence = fSub.readline() #Time stamp 00:00:00 ---> etc
         fTrans.write(sentence)
         sentence = fSub.readline() #Read first line of subtitle
-        '''
         copy = fSub.readline() #Read next line of subtitle file to check if it is an empty line or not
         nextLine = copy #Actual next line (this won't be stripped)
         while copy.strip() != "": # Strips copy of spaces, tabs, new line etc., returns only the character. An empty line has no characters i.e. ""
             sentence = sentence + " " + nextLine
             copy = fSub.readline() #"\n"
             nextLine = copy #"\n"
-        '''
-        #WHY?
+
+        #End of file
         if sentence == "":
             break
 
@@ -201,23 +205,37 @@ def translatedSub():
         flagIts = sentence.find("it's")
         if flagIts >= 0:
           sentence = sentence[:flagIts] + "it is" + sentence[flagIts+4:]
+
+        #Bring the entire sentence into lowercase
         sentence = sentence.lower()
 
         #Tokenize the sentence to extract words and punctuation
         tokens = nltk.word_tokenize(sentence)
 
-        #Tag the extracted tokens using a Part-of-Speech (POS) Tagger
-        tagged = nltk.pos_tag(tokens)
+        countPunc = 1
+        
+        if "." in tokens:
+          countPunc =  countPunc + tokens.count(".")
 
-        #This is where the translator kicks in
-        translated = translate(tagged,flagS,flagV,flagO)
-        print "Translated: ",translated
-        if flagSound == 1:
+        if "?" in tokens:
+          countPunc =  countPunc + tokens.count("?")
+
+        for j in range(countPunc):
+          #Tag the extracted tokens using a Part-of-Speech (POS) Tagger
+          tagged = nltk.pos_tag(tokens)
+
+          #This is where the translator kicks in
+          translated = translate(temp,flagS,flagV,flagO)
+          print "Translated: ",translated
+          if flagPunc == 1:
+            translated = translated + punctuation
+          if flagSound == 1:
             fTrans.write("["+translated.encode("UTF-8")+"]") #translated sentence
-        else:
+          else:
             fTrans.write(translated.encode("UTF-8"))
-        fTrans.write("\n\n")
-        if i == 2:
+          fTrans.write("\n\n")
+          
+        if i == 1:
             break
         
     global subFile
