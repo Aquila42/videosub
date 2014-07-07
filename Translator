@@ -7,7 +7,7 @@ import nltk
 import MySQLdb
 #Library to run command line arguments from Python
 import subprocess
-#Library for sys.exit()
+#Library for reading command-line input
 import sys
 
 #connect to the database
@@ -21,7 +21,7 @@ class DB:
   #Execute the "sql" query
   def query(self, sql):
     try:
-      #The cursor is used to execute the query
+            #The cursor is used to execute the query
       cursor = self.conn.cursor()
       cursor.execute(sql)
 
@@ -37,11 +37,12 @@ def userInput():
     global vidFile, subFile
     
     #User enters the name of the video file
-    vidFile = raw_input('Enter a file name: ') #Need to add GUI
+    #vidFile = raw_input('Enter a file name: ') #Need to add GUI
+    vidFile = sys.argv[1]
     
     #Open the video's .srt file (SRT file has the same name as the video)
-    x = vidFile.find('.')
-    subFile = vidFile[:x]+".srt"
+    index = vidFile.find('.')
+    subFile = vidFile[:index]+".srt"
 
     #Play video with English subtitles as a preview
     playVideo("Purisa")
@@ -51,35 +52,60 @@ def userInput():
     return f
 
 def playVideo(font):
+    #Play video on VLC Player with in the given font
     global vidFile, subFile
-    sub = "--sub-file="+subFile
     font = "--freetype-font="+font
-    p = subprocess.Popen(["/usr/bin/vlc",vidFile,sub,font])
+    #Call VLC from command-line
+    p = subprocess.Popen(["/usr/bin/vlc",vidFile,font])
     p.wait()
   
 def lookup(eng,count):
-    print "Entered lookup for ",eng," Count: ",count
+    ##print "Entered lookup for ",eng," Count: ",count
+    #Connect to the database
     db = DB()
-    if count == 0:
-      sql = "SELECT * FROM dictionary where English='"+eng+"'" #Error handling here!
-    else:
-      count = str(count)
-      sql = "SELECT * FROM dictionary where English='"+eng+"' and Count='"+count+"'"
+    #Convert int to string to create the SQL query
+    count = str(count)
+    sql = "SELECT * FROM dictionary where English='"+eng+"' and Count='"+count+"'"
+    #Query the database
     cursor = db.query(sql)
+    #Fetch the relevant row
     row = cursor.fetchone()
+    #In case no data has been fetched, try again with the default Count value (0)
     if row == None:
       count = "0"
       sql = "SELECT * FROM dictionary where English='"+eng+"' and Count='"+count+"'"
       cursor = db.query(sql)
       row = cursor.fetchone()
-    print "returned: ",row[1]," ",row[3]
+    ##print "Query: ",sql
+    ##print "returned: ",row[1]," ",row[3]
+    #Return the Hindi word along with the Count
     return row[1],row[3]
 
-def translate(tagged):    
+def lookupSubj(eng):
+    ##print "Entered subject lookup for ",eng
+    #Connect to the database
+    db = DB()
+    #Frame the SQL query
+    sql = "SELECT * FROM dictionary where English='"+eng+"'"
+    #Query the database
+    cursor = db.query(sql)
+    #Fetch the relevant row
+    row = cursor.fetchone()
+    ##print "Query: ",sql
+    ##print "returned: ",row[1]," ",row[3]
+    #Return the Hindi word and the Count
+    return row[1],row[3]
 
+
+def translate(tagged):
+
+    #Question Flag
     flagQ = 0
+    #Verb Flag
     flagVerb = 0
+    #Flag for the special case of "dont"
     flagDont = 0
+    #Flag for the special case for a "can" question
     flagCan = 0
     
     prevCount = 0
@@ -94,25 +120,26 @@ def translate(tagged):
     indexStart = -1
     indexEnd = -1
 
-    #Identify subject
     for word in tagged:
-      if word[0] == "the":
-        tagged.pop(index)
-      if word[0] == "." or word[0] == "?":
-        punctuation = word[0]
-        tagged = tagged[:-1]
-        break
-      if "WP" in word or "WRB" in word:
-        flagQ = 1
-      if word[1][:2] == "VB":
-        if indexStart == -1:
-          indexStart = index
-          print "Start: ",indexStart
-      elif indexStart > -1 and flagVerb == 0:
-        indexEnd = index
-        flagVerb = 1
-        print "End: ",indexEnd
-      index = index + 1
+        #"The" does not exist in Hindi
+        if word[0] == "the":
+            tagged.pop(index)
+        #Look for extra punctuation
+        if word[0] == "." or word[0] == "?":
+            punctuation = word[0]
+            tagged = tagged[:-1]
+            break
+        if "WP" in word or "WRB" in word:
+            flagQ = 1
+        if word[1][:2] == "VB":
+            if indexStart == -1:
+                indexStart = index
+                ##print "Start: ",indexStart
+        elif indexStart > -1 and flagVerb == 0:
+            indexEnd = index
+            flagVerb = 1
+            ##print "End: ",indexEnd
+        index = index + 1
 
     if flagQ == 1:
       o = tagged[:indexStart]
@@ -124,6 +151,7 @@ def translate(tagged):
       o = tagged[indexEnd:]
 
     temp = []
+    #If no verb has been identified, it must have been mis-tagged as an object
     if v == [] and len(tagged) > 2:
       for word in o:
         if word[0] == "dont":
@@ -131,7 +159,7 @@ def translate(tagged):
           v.insert(0,("do","VBP"))
           temp.insert(0,("not","RB"))
           continue
-        temp.insert(word)
+        temp.append(word)
       o = temp
 
     index = 0
@@ -142,20 +170,28 @@ def translate(tagged):
         v.append(("can","POS"))
         break
       index = index + 1
+
+    index = 0
+    for word in o:
+      if word[0] == "with":
+        o.pop(index+1)
+        break
+      index = index + 1
         
-    print "Subject: ",s
-    print "Verb: ",v
-    print "Object: ",o
+    ##print "Subject: ",s
+    ##print "Verb: ",v
+    ##print "Object: ",o
     
     for word in s:
-      trans,count = lookup(word[0], 0)
+      #Since the subject sets the count, the query should not have a "Count" parameter
+      trans,count = lookupSubj(word[0])
       if count < prevCount:
         count = prevCount
         prevCount = count
       else:
         subject = subject + trans + " "
 
-    print "Translated Subject: ",subject
+    ##print "Translated Subject: ",subject
     temp = v
     for word in v:
       if "VBG" in word:
@@ -164,17 +200,17 @@ def translate(tagged):
 
     v = temp
     for word in v:
-      print word[0]
+      ##print word[0]
       trans = lookup(word[0], count)[0]
       verb = verb + trans + " "
 
-    print "Translated Verb: ",verb
+    ##print "Translated Verb: ",verb
     
     for word in o:
       trans = lookup(word[0], count)[0]
       obj = obj + trans + " "
 
-    print "Translated Object: ",obj
+    ##print "Translated Object: ",obj
 
     translated = subject + obj + verb + punctuation
     return translated
@@ -207,10 +243,10 @@ def preproc(sentence):
   sentence = checkContraction(sentence,"don't",5)
   sentence = checkContraction(sentence,"isn't",5)
   flagIts = sentence.find("it's")
-  #print "flagIts: ",flagIts
+  ###print "flagIts: ",flagIts
   if flagIts >= 0:
     sentence = sentence[:flagIts] + "it is" + sentence[flagIts+4:]
-  print "\nSENTENCE: ",sentence.upper()
+  ##print "\nSENTENCE: ",sentence.upper()
 
   #Tokenize the sentence to extract words and punctuation
   tokens = nltk.word_tokenize(sentence)
@@ -224,6 +260,8 @@ def translatedSub():
     fSub = userInput() #English subtitles file
     fTrans = open("temp.srt",'w') #temporary subtitles file
     sentence = "Start"
+    translated = ""
+    tagged = ""
     #The three flags denote the identification of the Subject, Verb and Object
 
     i = 0
@@ -232,8 +270,10 @@ def translatedSub():
       line = fSub.next() #Time stamp 00:00:00 ---> etc
       fTrans.write(line)
       line = fSub.next() #First line
+      ##print line
       copy = line
-      while copy.strip() != "": #Till each line has been read
+      #Reading the entire subtitle in a single frame
+      while copy.strip() != "":
         #For music
         if sentence[0] == "[":
             length = len(sentence)-2
@@ -244,35 +284,38 @@ def translatedSub():
         else: #Ordinary sentences
           indexPrev = 0
           indexPunc = findPunc(line,indexPrev) #End of first sentence
+          #Segment out each subsequent sentence based on punctuation
           while indexPunc != -1:
             sentence = line[indexPrev:indexPunc+1]
             #check contractions, lowercase, POS tagging
             tagged = preproc(sentence)
-
+            ##print tagged
             #This is where the translator kicks in
             translated = translate(tagged)
-
+            ##print translated
             indexPrev = indexPunc + 1
             indexPunc = findPunc(line,indexPrev) #isolate each sentence in line
-
-        print "Translated: ",translated
-        fTrans.write(translated.encode("UTF-8"))
-        fTrans.write("\n\n")
-        line = fSub.next() #First line
-        copy = line
-      '''
-      if i == 2:
+            ##print "Translated: ",translated
+            fTrans.write(translated.encode("UTF-8"))
+          fTrans.write("\n")
+          line = fSub.next() #First line
+          copy = line
+      fTrans.write("\n\n")
+      ##print i
+      
+      if i == 5:
         break
       i = i + 1
-      '''
+      
     global subFile
     
     #Make temp the SRT file for the video
-    origFile = "orig"+subFile
+    index = subFile.rfind("/")
+    origFile = subFile[:index+1]+"orig"+subFile[index+1:]
     subprocess.call(["mv",subFile,origFile]) #make a copy of the English subtitle file
     subprocess.call(["mv","temp.srt",subFile]) # Make the translated file the video's SRT
     
 
 translatedSub()
-playVideo("Mangal")
-print ".srt successfully created!"
+playVideo("Lohit Hindi")
+##print ".srt successfully created!"
